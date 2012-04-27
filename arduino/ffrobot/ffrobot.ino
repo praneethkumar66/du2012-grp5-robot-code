@@ -38,7 +38,15 @@ int flameFRval;
 int flameBRval;
 int flameBCval;
 int flameBLval;
-
+//#####################################
+//Gyro vars
+int gyroPin = A4;               //Gyro is connected to analog pin 0
+float gyroVoltage = 5;         //Gyro is running at 5V
+float gyroZeroVoltage = 2.423;   //Gyro is zeroed at 2.423V
+float gyroSensitivity = .007;  //Our example gyro is 7mV/deg/sec
+float rotationThreshold = 1;   //Minimum deg/sec to keep track of - helps with gyro drifting
+float currentAngle = 0;          //Keep track of our current angle
+int roundedAngle; //rounded angle for whole number use
 
 //#############################################################################################
 //Setup
@@ -152,8 +160,19 @@ void loop()
  flameBCval = senseFlame(flameBCpin);
  flameBLval = senseFlame(flameBLpin);
  
- 
- 
+ //This code is used for keeping the gyroscope heading
+ float gyroRate = (analogRead(gyroPin) * gyroVoltage) / 1023; //This line converts the 0-1023 signal to 0-5V
+  gyroRate -= gyroZeroVoltage;  //This line finds the voltage offset from sitting still
+   gyroRate /= gyroSensitivity;   //This line divides the voltage we found by the gyro's sensitivity
+   if (gyroRate >= rotationThreshold || gyroRate <= -rotationThreshold) { //Ignore the gyro if our angular velocity does not meet our threshold
+    gyroRate /= 100; //This line divides the value by 100 since we are running in a 10ms loop (1000ms/10ms)
+    currentAngle += gyroRate;
+   }
+   if (currentAngle < 0)   //Keep our angle between 0-359 degrees
+    currentAngle += 360;
+  else if (currentAngle > 359)
+    currentAngle -= 360;
+   roundedAngle = currentAngle; //round to whole number
  
  //The following should be a test, where it should print the number of cm the distance is for the frontUSpin ultrasonic sensor
  Serial.print("Front Distance - ");
