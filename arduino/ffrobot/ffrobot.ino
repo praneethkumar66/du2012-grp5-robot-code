@@ -9,6 +9,10 @@
 //#############################################################################################
 
 //#####################################
+//Reflectivity Sensor
+int reflectPin =A3;
+int reflectVal;
+//#####################################
 //Ultrasonic Variables
 int frontUSpin=2; //pin assignment
 int frontUSdist; //distance var in cm
@@ -47,6 +51,9 @@ float gyroSensitivity = .007;  //Our example gyro is 7mV/deg/sec
 float rotationThreshold = 1;   //Minimum deg/sec to keep track of - helps with gyro drifting
 float currentAngle = 0;          //Keep track of our current angle
 int roundedAngle; //rounded angle for whole number use
+//#####################################
+//Encoder Vars
+ int rawEncoderValL=0, sensorcount0L=0, sensorcount1L=0;
 
 //#############################################################################################
 //Setup
@@ -59,7 +66,7 @@ void setup()
 }
 
 //#############################################################################################
-//Measure Ultrasonic Distance
+//Measure Ultrasonic Distance Function
 //#############################################################################################
 int measureDistance(int USside) //I want to be able to put measureDistance(frontUSpin) or measureDistance(leftUSpin) or measureDistance(rightUSpin)
 //and have it give me the distance by replacing the var USside with one of the 3 vars I put in
@@ -91,7 +98,7 @@ return USdist;
 }
 
 //#############################################################################################
-//Flame Sensor Code / Multiplexer Code
+//Flame Sensor Code / Multiplexer Function
 //#############################################################################################
 /*Please read connections.xslx for more information on the 4051 multiplexer used. 
 This allows for 1 analog pin and 3 digital pins to be used in order to switch between up to 8 sensors. 
@@ -139,10 +146,17 @@ else if (flamepin == flameBCpin) { //If the back center pin is selected
   
   return flameval;
 }
-  
-  
-  
-  
+ 
+//#############################################################################################
+//Reflectivity Sensor Function
+//############################################################################################# 
+//  int senseReflection(int pinval)
+//  {
+//    reflectVal = analogRead(pinval);
+//    return reflectVal;
+//  }
+//  senseReflection(reflectPin);
+   
 //#############################################################################################
 //Loop Code
 //#############################################################################################
