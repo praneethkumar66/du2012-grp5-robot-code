@@ -10,7 +10,7 @@
 
 //#####################################
 //Reflectivity Sensor
-int reflectPin =A3;
+int reflectPin =9;
 int reflectVal;
 //#####################################
 //Ultrasonic Variables
@@ -150,29 +150,36 @@ else if (flamepin == flameBCpin) { //If the back center pin is selected
 //#############################################################################################
 //Reflectivity Sensor Function
 //############################################################################################# 
-//  int senseReflection(int pinval)
-//  {
-//    reflectVal = analogRead(pinval);
-//    return reflectVal;
-//  }
-//  senseReflection(reflectPin);
-   
+long reflect(int sensPin){
+   long result = 0;
+   pinMode(sensPin, OUTPUT);       // make pin OUTPUT
+   digitalWrite(sensPin, HIGH);    // make pin HIGH to discharge capacitor - study the schematic
+   delay(1);                       // wait a  ms to make sure cap is discharged
+
+   pinMode(sensPin, INPUT);        // turn pin into an input and time till pin goes low
+   digitalWrite(sensPin, LOW);     // turn pullups off - or it won't work
+   while(digitalRead(sensPin)){    // wait for pin to go low
+      result++;
+   }
+
+   return result;                   // report results   
+}   
 //#############################################################################################
 //Loop Code
 //#############################################################################################
 void loop()
 {
  //Here is some basic code for sensing 
- leftUSdist = measureDistance(leftUSpin);
- rightUSdist = measureDistance(rightUSpin);
- frontUSdist = measureDistance(frontUSpin);
- 
- flameFLval = senseFlame(flameFLpin);
- flameFCval = senseFlame(flameFCpin);
- flameFRval = senseFlame(flameFRpin);
- flameBRval = senseFlame(flameBRpin);
- flameBCval = senseFlame(flameBCpin);
- flameBLval = senseFlame(flameBLpin);
+// leftUSdist = measureDistance(leftUSpin);
+// rightUSdist = measureDistance(rightUSpin);
+// frontUSdist = measureDistance(frontUSpin);
+// 
+// flameFLval = senseFlame(flameFLpin);
+// flameFCval = senseFlame(flameFCpin);
+// flameFRval = senseFlame(flameFRpin);
+// flameBRval = senseFlame(flameBRpin);
+// flameBCval = senseFlame(flameBCpin);
+// flameBLval = senseFlame(flameBLpin);
  
  //This code is used for keeping the gyroscope heading
  float gyroRate = (analogRead(gyroPin) * gyroVoltage) / 1023; //This line converts the 0-1023 signal to 0-5V
@@ -182,15 +189,17 @@ void loop()
     gyroRate /= 100; //This line divides the value by 100 since we are running in a 10ms loop (1000ms/10ms)
     currentAngle += gyroRate;
    }
-   if (currentAngle < 0)   //Keep our angle between 0-359 degrees
+   if (currentAngle < 0)  { //Keep our angle between 0-359 degrees
     currentAngle += 360;
-  else if (currentAngle > 359)
+   }
+  else if (currentAngle > 359){
     currentAngle -= 360;
-   roundedAngle = currentAngle; //round to whole number
+   }
+   roundedAngle = currentAngle * 2.368; //round to whole number
  
  //The following should be a test, where it should print the number of cm the distance is for the frontUSpin ultrasonic sensor
- Serial.print("Front Distance - ");
- Serial.print(frontUSdist);
- Serial.println(" cm");
- delay(500);
+ Serial.print("Heading - ");
+ Serial.print(roundedAngle);
+ Serial.println(" degrees");
+ //delay(500);
 }
