@@ -7,10 +7,10 @@
 //#############################################################################################
 //Initial Variables/Constants
 //#############################################################################################
-
+int CW, CCW, FWD, REV, setdir;
 //#####################################
 //Reflectivity Sensor
-int reflectPin =9;
+int reflectPin =A3;
 int reflectVal;
 //#####################################
 //Ultrasonic Variables
@@ -51,9 +51,15 @@ float gyroSensitivity = .007;  //Our example gyro is 7mV/deg/sec
 float rotationThreshold = 1;   //Minimum deg/sec to keep track of - helps with gyro drifting
 float currentAngle = 0;          //Keep track of our current angle
 int roundedAngle; //rounded angle for whole number use
+float gyroRate;
 //#####################################
 //Encoder Vars
  int rawEncoderValL=0, sensorcount0L=0, sensorcount1L=0;
+ //#####################################
+//movement Vars
+int leftSpeedPin=5, rightSpeedPin=6;
+int leftDirPin=7, rightDirPin=8;
+int leftSpeed, rightSpeed, leftDir, rightDir; 
 
 //#############################################################################################
 //Setup
@@ -150,56 +156,119 @@ else if (flamepin == flameBCpin) { //If the back center pin is selected
 //#############################################################################################
 //Reflectivity Sensor Function
 //############################################################################################# 
-long reflect(int sensPin){
-   long result = 0;
-   pinMode(sensPin, OUTPUT);       // make pin OUTPUT
-   digitalWrite(sensPin, HIGH);    // make pin HIGH to discharge capacitor - study the schematic
-   delay(1);                       // wait a  ms to make sure cap is discharged
+//  int senseReflection(int pinval)
+//  {
+//    reflectVal = analogRead(pinval);
+//    return reflectVal;
+//  }
+//  senseReflection(reflectPin);
 
-   pinMode(sensPin, INPUT);        // turn pin into an input and time till pin goes low
-   digitalWrite(sensPin, LOW);     // turn pullups off - or it won't work
-   while(digitalRead(sensPin)){    // wait for pin to go low
-      result++;
-   }
-
-   return result;                   // report results   
-}   
-//#############################################################################################
-//Loop Code
-//#############################################################################################
-void loop()
+void drive( int dir, int howfast)
 {
- //Here is some basic code for sensing 
-// leftUSdist = measureDistance(leftUSpin);
-// rightUSdist = measureDistance(rightUSpin);
-// frontUSdist = measureDistance(frontUSpin);
-// 
-// flameFLval = senseFlame(flameFLpin);
-// flameFCval = senseFlame(flameFCpin);
-// flameFRval = senseFlame(flameFRpin);
-// flameBRval = senseFlame(flameBRpin);
-// flameBCval = senseFlame(flameBCpin);
-// flameBLval = senseFlame(flameBLpin);
+  if(dir == CW)
+  {
+    digitalWrite(leftDirPin, LOW);
+  digitalWrite(rightDirPin, HIGH);
+  analogWrite(leftSpeedPin, howfast);
+  analogWrite(rightSpeedPin, howfast);
+  }
+  if(dir == CCW)
+   {
+    digitalWrite(leftDirPin, HIGH);
+  digitalWrite(rightDirPin, LOW);
+  analogWrite(leftSpeedPin, howfast);
+  analogWrite(rightSpeedPin, howfast);
+  }
+  if(dir == FWD)
+   {
+    digitalWrite(leftDirPin, LOW);
+  digitalWrite(rightDirPin, LOW);
+  analogWrite(leftSpeedPin, howfast);
+  analogWrite(rightSpeedPin, howfast);
+  }
+  if(dir == REV)
+   {
+    digitalWrite(leftDirPin, LOW);
+  digitalWrite(rightDirPin, HIGH);
+  analogWrite(leftSpeedPin, howfast);
+  analogWrite(rightSpeedPin, howfast);
+  }
  
- //This code is used for keeping the gyroscope heading
- float gyroRate = (analogRead(gyroPin) * gyroVoltage) / 1023; //This line converts the 0-1023 signal to 0-5V
+}
+//#############################################################################################
+//Go Distance at Heading Code
+//#############################################################################################
+int goplace( int radius, int angle)
+{
+  int originalHeading= roundedAngle; //makes current heading variable
+  if(angle - originalHeading <=180) // if the destination is less than 180 degrees clockwise from the orginal angle
+{
+setdir = CW;
+  
+}
+else if (angle - originalHeading >180)
+{
+  // set directions for counter-clockwise spinning
+ setdir = CCW;
+}
+
+while(roundedAngle != angle)
+{
+  readHeading();
+  
+  
+   
+//#############################################################################################
+//Gyro Code
+//#############################################################################################
+
+void readHeading()
+{
+gyroRate = (analogRead(gyroPin) * gyroVoltage) / 1023; //This line converts the 0-1023 signal to 0-5V
   gyroRate -= gyroZeroVoltage;  //This line finds the voltage offset from sitting still
    gyroRate /= gyroSensitivity;   //This line divides the voltage we found by the gyro's sensitivity
    if (gyroRate >= rotationThreshold || gyroRate <= -rotationThreshold) { //Ignore the gyro if our angular velocity does not meet our threshold
     gyroRate /= 100; //This line divides the value by 100 since we are running in a 10ms loop (1000ms/10ms)
     currentAngle += gyroRate;
    }
-   if (currentAngle < 0)  { //Keep our angle between 0-359 degrees
+   if (currentAngle < 0) {  //Keep our angle between 0-359 degrees
     currentAngle += 360;
-   }
-  else if (currentAngle > 359){
+}
+  else if (currentAngle > 359) {
     currentAngle -= 360;
-   }
-   roundedAngle = currentAngle * 2.368; //round to whole number
+}
+   roundedAngle = currentAngle;
+return;
+}
+
+
+
+
+
+
+
+
+
+
+//#############################################################################################
+//Loop Code
+//#############################################################################################
+void loop()
+{
+ //Here is some basic code for sensing 
+ leftUSdist = measureDistance(leftUSpin);
+ rightUSdist = measureDistance(rightUSpin);
+ frontUSdist = measureDistance(frontUSpin);
  
- //The following should be a test, where it should print the number of cm the distance is for the frontUSpin ultrasonic sensor
- Serial.print("Heading - ");
- Serial.print(roundedAngle);
- Serial.println(" degrees");
- //delay(500);
+ flameFLval = senseFlame(flameFLpin);
+ flameFCval = senseFlame(flameFCpin);
+ flameFRval = senseFlame(flameFRpin);
+ flameBRval = senseFlame(flameBRpin);
+ flameBCval = senseFlame(flameBCpin);
+ flameBLval = senseFlame(flameBLpin);
+ readHeading();
+ //This code is used for keeping the gyroscope heading
+  //round to whole number
+ 
+
 }
