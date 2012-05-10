@@ -54,22 +54,50 @@ int roundedAngle; //rounded angle for whole number use
 float gyroRate;
 //#####################################
 //Encoder Vars
- int rawEncoderValL=0, sensorcount0L=0, sensorcount1L=0;
+ int avgCount;
+ int encoderPinL=A0;
+ int encoderPinR=A1;
+ int sensorcount1L=0;
+ int sensorcount1R=0;
  //#####################################
 //movement Vars
 int leftSpeedPin=5, rightSpeedPin=6;
 int leftDirPin=7, rightDirPin=8;
 int leftSpeed, rightSpeed, leftDir, rightDir; 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 //#############################################################################################
 //Setup
 //#############################################################################################
-
 void setup()
 {
 
  Serial.begin(9600);
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 //#############################################################################################
 //Measure Ultrasonic Distance Function
@@ -102,6 +130,14 @@ int measureDistance(int USside) //I want to be able to put measureDistance(front
  USdist = int(pulseduration/29);
 return USdist;
 }
+
+
+
+
+
+
+
+
 
 //#############################################################################################
 //Flame Sensor Code / Multiplexer Function
@@ -153,6 +189,16 @@ else if (flamepin == flameBCpin) { //If the back center pin is selected
   return flameval;
 }
  
+
+
+
+
+
+
+
+
+
+
 //#############################################################################################
 //Reflectivity Sensor Function
 //############################################################################################# 
@@ -161,9 +207,21 @@ else if (flamepin == flameBCpin) { //If the back center pin is selected
 //    reflectVal = analogRead(pinval);
 //    return reflectVal;
 //  }
-//  senseReflection(reflectPin);
 
-void drive( int dir, int howfast)
+
+
+
+
+
+
+
+
+
+
+//#############################################################################################
+//Basic Drive Function
+//#############################################################################################
+void drive( int dir, int howfast) //call with drive(FWD/REV/CW/CCW, 0-255) for direction and speed
 {
   if(dir == CW)
   {
@@ -195,29 +253,99 @@ void drive( int dir, int howfast)
   }
  
 }
+
+
+
+
+
+
+
+
+
+//#############################################################################################
+//Code for encoders
+//#############################################################################################
+int encodeDistance(int whichEncoder)
+{
+  int rawsensorValue=0;
+int encoderVarSelect;
+ int sensorcount0 = 0;
+ if which
+  rawsensorValue = analogRead(whichEncoder);
+
+if(whichEncoder == A0)
+{
+  encoderVarSelect = sensorcount1L;
+}
+else
+{
+  encoderVarSelect = sensorcount1R;
+}
+
+if (rawsensorValue < 600){ //Min value is 400 and max value is 800, so state chance can be done at 600.
+encoderVarSelect = 1;
+}
+else {
+sensorcount1 = 0;
+}
+if (encoderVarSelect != sensorcount0){
+count ++;
+}
+
+
+
+
+
+
+
+
 //#############################################################################################
 //Go Distance at Heading Code
 //#############################################################################################
 int goplace( int radius, int angle)
 {
   int originalHeading= roundedAngle; //makes current heading variable
+
   if(angle - originalHeading <=180) // if the destination is less than 180 degrees clockwise from the orginal angle
 {
 setdir = CW;
-  
 }
-else if (angle - originalHeading >180)
+else if (angle - originalHeading >180) //this part makes it turn the shortest way possible
 {
-  // set directions for counter-clockwise spinning
  setdir = CCW;
 }
 
-while(roundedAngle != angle)
+while(roundedAngle != angle) // while it isn't facing the right direction. 
 {
   readHeading();
-  
+drive(setdir, 255); //spin the direction set above
+}
+drive(FWD, 0); //stop
+
+}
   
    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //#############################################################################################
 //Gyro Code
 //#############################################################################################
@@ -240,6 +368,38 @@ gyroRate = (analogRead(gyroPin) * gyroVoltage) / 1023; //This line converts the 
    roundedAngle = currentAngle;
 return;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
