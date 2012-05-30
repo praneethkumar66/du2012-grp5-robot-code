@@ -2,8 +2,8 @@
 //Fire Fighting Robot Code - Drexel Freshman Design Project 2012 Group 5
 //Michael Dornisch, Matthew Lieve, Jim Moran
 //#############################################################################################
-
-
+#include <avr/interrupt.h>  //include interrupts to use timer 2 overflow as internal interrrupt
+#include <avr/io.h>
 //#############################################################################################
 //Initial Variables/Constants
 //#############################################################################################
@@ -17,11 +17,12 @@ int reflectVal;
 //Fan
 int fanPin = 10;
 
+
 //#####################################
 //Ultrasonic Variables
-int frontUSpin=2; //pin assignment
+int frontUSpin=12; //pin assignment
 int frontUSdist; //distance var in cm
-int leftUSpin=3;//pin assignment
+int leftUSpin=13;//pin assignment
 int leftUSdist;//distance var in cm
 int rightUSpin=4;//pin assignment
 int rightUSdist;//distance var in cm
@@ -30,9 +31,9 @@ unsigned long pulseduration=0;//used in calculating distance
 //#####################################
 //Multiplexer/flamesensor variables
 int multiPin=A2; //Analog in pin to be multiplexed
-int selectApin=11; //the following 3 pins are used for selecting the input by driving high/low
-int selectBpin=12;
-int selectCpin=13;
+int selectApin=0; //the following 3 pins are used for selecting the input by driving high/low
+int selectBpin=1;
+int selectCpin=2;
 
 int flameFLpin=0; //abstract front left sensor pin
 int flameFCpin=1; //abstract front center sensor pin
@@ -51,12 +52,16 @@ int flameBLval;
 //Gyro vars
 int gyroPin = A4;               //Gyro is connected to analog pin 0
 float gyroVoltage = 5;         //Gyro is running at 5V
-float gyroZeroVoltage = 2.423;   //Gyro is zeroed at 2.423V
+float gyroZeroVoltage = 2.425;   //Gyro is zeroed at 2.423V
 float gyroSensitivity = .007;  //Our example gyro is 7mV/deg/sec
 float rotationThreshold = 1;   //Minimum deg/sec to keep track of - helps with gyro drifting
-float currentAngle = 0;          //Keep track of our current angle
-int roundedAngle; //rounded angle for whole number use
-float gyroRate;
+
+volatile float currentAngle = 0;          //Keep track of our current angle
+volatile int roundedAngle; //rounded angle for whole number use
+volatile float gyroRate;
+unsigned int count = 0;
+volatile float ISRvalue;
+volatile boolean canCheck = false;
 //#####################################
 //Encoder Vars
 int avgCount;
@@ -95,16 +100,24 @@ int leftSpeed, rightSpeed, leftDir, rightDir;
 void setup()
 {
 
-  Serial.begin(9600);
-  pinMode(5, OUTPUT);
+  Serial.begin(9600); //Setup serial for debugging
+  pinMode(5, OUTPUT); //Setup all digital pins that are permanant I/O
   pinMode(6, OUTPUT);
   pinMode(7, OUTPUT);
   pinMode(8, OUTPUT);
   pinMode(10, OUTPUT);
-  pinMode(11, OUTPUT);
-  pinMode(12, OUTPUT);
-  pinMode(13, OUTPUT);
-  digitalWrite(10, HIGH);
+  pinMode(0, OUTPUT);
+  pinMode(1, OUTPUT);
+  pinMode(2, OUTPUT);
+  digitalWrite(10, HIGH); //Turn fan off. it defaults to on when LOW
+
+  //Setup Timer2 to fire every 1ms
+  TCCR2B = 0x00;        //Disbale Timer2 while we set it up
+  TCNT2  = 130;         //Reset Timer Count to 130 out of 255
+  TIFR2  = 0x00;        //Timer2 INT Flag Reg: Clear Timer Overflow Flag
+  TIMSK2 = 0x01;        //Timer2 INT Reg: Timer2 Overflow Interrupt Enable
+  TCCR2A = 0x00;        //Timer2 Control Reg A: Normal port operation, Wave Gen Mode normal
+  TCCR2B = 0x05;        //Timer2 Control Reg B: Timer Prescaler set to 128
 }
 
 
@@ -334,48 +347,52 @@ void rightEncoder()
   }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+//#############################################################################################
+//Interrupt Service Routine
+//#############################################################################################
+ISR(TIMER2_OVF_vect) { //Timer2 overflow interrupt vector, called every 1 ms
+  count++;
+  if(count > 99) { //how many ms to wait before doing this(0 based)
+    // readHeading();  - don't use this, too much going on...
+    ISRvalue = analogRead(gyroPin);
+    count = 0; 
+    canCheck = true; 
+  }
+  TCNT2 = 130; //set to 130 out of 255 (125 cycles)
+  TIFR2 = 0x00; //restart timer
+};
 
 //#############################################################################################
 //Gyro Code
 //#############################################################################################
 
-void readHeading(int timing)
+void readHeading()
 {
-  gyroRate = (analogRead(gyroPin) * gyroVoltage) / 1023; //This line converts the 0-1023 signal to 0-5V
-  gyroRate -= gyroZeroVoltage;  //This line finds the voltage offset from sitting still
-  gyroRate /= gyroSensitivity;   //This line divides the voltage we found by the gyro's sensitivity
-  if (gyroRate >= rotationThreshold || gyroRate <= -rotationThreshold) { //Ignore the gyro if our angular velocity does not meet our threshold
-    gyroRate /= timing; //This line divides the value by 100 since we are running in a 10ms loop (1000ms/10ms)
-    currentAngle += gyroRate;
+  if(canCheck)
+  {
+    gyroRate = (ISRvalue * gyroVoltage) / 1023; //This line converts the 0-1023 signal to 0-5V
+    gyroRate -= gyroZeroVoltage;  //This line finds the voltage offset from sitting still
+    gyroRate /= gyroSensitivity;   //This line divides the voltage we found by the gyro's sensitivity
+    if (gyroRate >= rotationThreshold || gyroRate <= -rotationThreshold) { //Ignore the gyro if our angular velocity does not meet our threshold
+      gyroRate /= 10; //This line divides the value by 100 since we are running in a 10ms loop (1000ms/10ms)
+      currentAngle += gyroRate;
+    }
+    if (currentAngle < 0) {  //Keep our angle between 0-359 degrees
+      currentAngle += 360;
+    }
+    else if (currentAngle > 359) {
+      currentAngle -= 360;
+    }
+    roundedAngle = currentAngle;
+    roundedAngle = 360 - roundedAngle;
+    //Serial.println(" ");
+    canCheck = false;
   }
-  if (currentAngle < 0) {  //Keep our angle between 0-359 degrees
-    currentAngle += 360;
-  }
-  else if (currentAngle > 359) {
-    currentAngle -= 360;
-  }
-  roundedAngle = currentAngle;
-  roundedAngle = 360 - roundedAngle;
   return;
 }
 
 
-void checkSensors(int gyroTiming)
+void checkSensors()
 {
   leftEncoder(); //get encoder ticks
   rightEncoder();
@@ -385,7 +402,7 @@ void checkSensors(int gyroTiming)
   flameBLval = senseFlame(flameBLpin);
   flameBCval = senseFlame(flameBCpin);
   flameBRval = senseFlame(flameBRpin);
-  readHeading(gyroTiming); // check gyro
+  readHeading(); // check gyro
   frontUSdist = measureDistance(frontUSpin); // check all US sensors
   leftUSdist = measureDistance(leftUSpin);
   rightUSdist = measureDistance(rightUSpin);
@@ -398,114 +415,86 @@ void checkSensors(int gyroTiming)
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 //#############################################################################################
 //Loop Code
 //#############################################################################################
-void loop() {
-  switch(gameMode) {
-  case 0:
-    {
-      //intelligent navigation
-      int roomMode=0; //This is how to search each room.
-      //0 = first hallway
-      //1 = 
-      //2 =
-      //3 =
-
-      checkSensors(50); //update all sensors
-      digitalWrite(leftDirPin, LOW);
-      digitalWrite(rightDirPin, LOW);
-      analogWrite(leftSpeedPin, 255); 
-      analogWrite(rightSpeedPin, 255);
-      Serial.println("Start");
-      while(roomMode ==0 && frontUSdist > 10) //before reaching the wall
-      {
-        checkSensors(50); //update all sensors
-        Serial.println(roundedAngle);
-        delay(10);
-        if(roundedAngle >= 4 && roundedAngle < 180) //if veering clockwise
-        {
-          digitalWrite(leftDirPin, LOW);
-          digitalWrite(rightDirPin, LOW);
-          analogWrite(leftSpeedPin, 200); //slow down left side to compensate
-          analogWrite(rightSpeedPin, 255);
-          Serial.println("compensate for clockwise");
-          
-        }
-        else if(roundedAngle <= 360-4 && roundedAngle > 180) //if veering c-clockwise
-        {
-          digitalWrite(leftDirPin, LOW);
-          digitalWrite(rightDirPin, LOW);
-          analogWrite(leftSpeedPin, 255); //slow down right side to compensate
-          analogWrite(rightSpeedPin, 200);
-          Serial.println("compensate for clockwise");
-        }
-        else //if on track
-        {
-          digitalWrite(leftDirPin, LOW);
-          digitalWrite(rightDirPin, LOW);
-          analogWrite(leftSpeedPin, 255); 
-          analogWrite(rightSpeedPin, 255);
-          //Serial.println("going straignt");
-        }
-
-      }
-    }
-    digitalWrite(leftDirPin, LOW);
-          digitalWrite(rightDirPin, LOW);
-          analogWrite(leftSpeedPin, 0); 
-          analogWrite(rightSpeedPin, 0);
-   
-
-  case 1:
-    // Fire is detected, closing in!
-    break;
-  case 2:
-    // something must've went wrong, brute force method
-    break;
-  case 3: 
-    // time to go home
-    break;
-  default:
-    //Found home! yay!
-    digitalWrite(2, HIGH);
-    delay(100);
-    digitalWrite(2, LOW);
-    delay(100);
-    break;
-  }
+//void loop() {
+//  switch(gameMode) {
+//  case 0:
+//    {
+//      //intelligent navigation
+//      int roomMode=0; //This is how to search each room.
+//      //0 = first hallway
+//      //1 = 
+//      //2 =
+//      //3 =
+//
+//      checkSensors(); //update all sensors
+//      digitalWrite(leftDirPin, LOW);
+//      digitalWrite(rightDirPin, LOW);
+//      analogWrite(leftSpeedPin, 255); 
+//      analogWrite(rightSpeedPin, 255);
+//      Serial.println("Start");
+//      while(roomMode ==0 && frontUSdist > 10) //before reaching the wall
+//      {
+//        checkSensors(); //update all sensors
+//        Serial.println(roundedAngle);
+//        if(roundedAngle >= 4 && roundedAngle < 180) //if veering clockwise
+//        {
+//          digitalWrite(leftDirPin, LOW);
+//          digitalWrite(rightDirPin, LOW);
+//          analogWrite(leftSpeedPin, 200); //slow down left side to compensate
+//          analogWrite(rightSpeedPin, 255);
+//         // Serial.println("compensate for clockwise");
+//
+//        }
+//        else if(roundedAngle <= 360-4 && roundedAngle > 180) //if veering c-clockwise
+//        {
+//          digitalWrite(leftDirPin, LOW);
+//          digitalWrite(rightDirPin, LOW);
+//          analogWrite(leftSpeedPin, 255); //slow down right side to compensate
+//          analogWrite(rightSpeedPin, 200);
+//          //Serial.println("compensate for clockwise");
+//        }
+//        else //if on track
+//        {
+//          digitalWrite(leftDirPin, LOW);
+//          digitalWrite(rightDirPin, LOW);
+//          analogWrite(leftSpeedPin, 255); 
+//          analogWrite(rightSpeedPin, 255);
+//          //Serial.println("going straignt");
+//        }
+//
+//      }
+//    }
+//    digitalWrite(leftDirPin, LOW);
+//    digitalWrite(rightDirPin, LOW);
+//    analogWrite(leftSpeedPin, 0); 
+//    analogWrite(rightSpeedPin, 0);
+//
+//
+//  case 1:
+//    // Fire is detected, closing in!
+//    break;
+//  case 2:
+//    // something must've went wrong, brute force method
+//    break;
+//  case 3: 
+//    // time to go home
+//    break;
+//  default:
+//    //Found home! yay!
+//    digitalWrite(2, HIGH);
+//    delay(100);
+//    digitalWrite(2, LOW);
+//    delay(100);
+//    break;
+//  }
+//}
+void loop()
+{
+  checkSensors();
+  Serial.println(roundedAngle);
 }
+
 
