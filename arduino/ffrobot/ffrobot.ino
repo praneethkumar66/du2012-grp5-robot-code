@@ -7,11 +7,16 @@
 //#############################################################################################
 //Initial Variables/Constants
 //#############################################################################################
-int CW, CCW, FWD, REV, setdir;
+String CW, CCW, FWD, REV, setdir;
+int gameMode = 0;
 //#####################################
 //Reflectivity Sensor
-int reflectPin =A3;
+int reflectPin =9;
 int reflectVal;
+//#####################################
+//Fan
+int fanPin = 10;
+
 //#####################################
 //Ultrasonic Variables
 int frontUSpin=2; //pin assignment
@@ -54,12 +59,18 @@ int roundedAngle; //rounded angle for whole number use
 float gyroRate;
 //#####################################
 //Encoder Vars
- int avgCount;
- int encoderPinL=A0;
- int encoderPinR=A1;
- int sensorcount1L=0;
- int sensorcount1R=0;
- //#####################################
+int avgCount;
+int encoderPinL=A0;
+int encoderPinR=A1;
+int currentEncoderL=0;
+int currentEncoderR=0;
+int prevEncoderL=0;
+int prevEncoderR=0;
+int encoderCountL=0;
+int encoderCountR=0;
+int distanceTraveled;
+String Left, Right;
+//#####################################
 //movement Vars
 int leftSpeedPin=5, rightSpeedPin=6;
 int leftDirPin=7, rightDirPin=8;
@@ -84,7 +95,16 @@ int leftSpeed, rightSpeed, leftDir, rightDir;
 void setup()
 {
 
- Serial.begin(9600);
+  Serial.begin(9600);
+  pinMode(5, OUTPUT);
+  pinMode(6, OUTPUT);
+  pinMode(7, OUTPUT);
+  pinMode(8, OUTPUT);
+  pinMode(10, OUTPUT);
+  pinMode(11, OUTPUT);
+  pinMode(12, OUTPUT);
+  pinMode(13, OUTPUT);
+  digitalWrite(10, HIGH);
 }
 
 
@@ -105,47 +125,62 @@ void setup()
 int measureDistance(int USside) //I want to be able to put measureDistance(frontUSpin) or measureDistance(leftUSpin) or measureDistance(rightUSpin)
 //and have it give me the distance by replacing the var USside with one of the 3 vars I put in
 {
-  
- // set pin as output so we can send a pulse
- pinMode(USside, OUTPUT);
-// set output to LOW
- digitalWrite(USside, LOW);
- delayMicroseconds(5);
 
- // now send the 5uS pulse out to activate Ping)))
- digitalWrite(USside, HIGH);
- delayMicroseconds(5);
- digitalWrite(USside, LOW);
+  // set pin as output so we can send a pulse
+  pinMode(USside, OUTPUT);
+  // set output to LOW
+  digitalWrite(USside, LOW);
+  delayMicroseconds(5);
 
- // now we need to change the digital pin
- // to input to read the incoming pulse
- pinMode(USside, INPUT);
+  // now send the 5uS pulse out to activate Ping)))
+  digitalWrite(USside, HIGH);
+  delayMicroseconds(5);
+  digitalWrite(USside, LOW);
 
- // finally, measure the length of the incoming pulse
- pulseduration=pulseIn(USside, HIGH);
+  // now we need to change the digital pin
+  // to input to read the incoming pulse
+  pinMode(USside, INPUT);
+
+  // finally, measure the length of the incoming pulse
+  pulseduration=pulseIn(USside, HIGH);
   // divide the pulse length by half
- pulseduration=pulseduration/2; 
+  pulseduration=pulseduration/2; 
 
- // now convert to centimetres. We're metric here people...
- USdist = int(pulseduration/29);
-return USdist;
+  // now convert to centimetres. We're metric here people...
+  USdist = int(pulseduration/29);
+  return USdist;
 }
 
 
 
 
 
+//#############################################################################################
+//Reflector Sensor
+//#############################################################################################
+long reflectSensor(){
+  long result = 0;
+  pinMode(reflectPin, OUTPUT);       // make pin OUTPUT
+  digitalWrite(reflectPin, HIGH);    // make pin HIGH to discharge capacitor - study the schematic
+  delay(1);                       // wait a  ms to make sure cap is discharged
 
+  pinMode(reflectPin, INPUT);        // turn pin into an input and time till pin goes low
+  digitalWrite(reflectPin, LOW);     // turn pullups off - or it won't work
+  while(digitalRead(reflectPin)){    // wait for pin to go low
+    result++;
+  }
 
+  return result;                   // report results   
+}   
 
 
 //#############################################################################################
 //Flame Sensor Code / Multiplexer Function
 //#############################################################################################
 /*Please read connections.xslx for more information on the 4051 multiplexer used. 
-This allows for 1 analog pin and 3 digital pins to be used in order to switch between up to 8 sensors. 
-this code will activate the right switches, then read the sensor, allowing it to be written to the proper variable.
-Inside the spreadsheet is the binary conversion table.*/
+ This allows for 1 analog pin and 3 digital pins to be used in order to switch between up to 8 sensors. 
+ this code will activate the right switches, then read the sensor, allowing it to be written to the proper variable.
+ Inside the spreadsheet is the binary conversion table.*/
 
 int senseFlame( int flamepin)
 {
@@ -156,27 +191,27 @@ int senseFlame( int flamepin)
     flameval = analogRead(multiPin); //Read the pin through the multiplexer, set to flame val
   }
   else if (flamepin == flameFCpin) { //If the front center pin is selected
-    digitalWrite(selectApin,LOW); //set binary to 001
+    digitalWrite(selectApin,HIGH); //set binary to 001
     digitalWrite(selectBpin,LOW);
-    digitalWrite(selectCpin,HIGH);
+    digitalWrite(selectCpin,LOW);
     flameval = analogRead(multiPin); //Read the pin through the multiplexer, set to flame val
   }
-    else if (flamepin == flameFRpin) { //If the front right pin is selected
+  else if (flamepin == flameFRpin) { //If the front right pin is selected
     digitalWrite(selectApin,LOW); //set binary to 010
     digitalWrite(selectBpin,HIGH);
     digitalWrite(selectCpin,LOW);
     flameval = analogRead(multiPin); //Read the pin through the multiplexer, set to flame val
   }
   else if (flamepin == flameBRpin) { //If the back right pin is selected
-    digitalWrite(selectApin,LOW); //set binary to 011
+    digitalWrite(selectApin,HIGH); //set binary to 011
     digitalWrite(selectBpin,HIGH);
-    digitalWrite(selectCpin,HIGH);
+    digitalWrite(selectCpin,LOW);
     flameval = analogRead(multiPin); //Read the pin through the multiplexer, set to flame val
   }
-else if (flamepin == flameBCpin) { //If the back center pin is selected
-    digitalWrite(selectApin,HIGH); //set binary to 100
+  else if (flamepin == flameBCpin) { //If the back center pin is selected
+    digitalWrite(selectApin,LOW); //set binary to 100
     digitalWrite(selectBpin,LOW);
-    digitalWrite(selectCpin,LOW);
+    digitalWrite(selectCpin,HIGH);
     flameval = analogRead(multiPin); //Read the pin through the multiplexer, set to flame val
   }
   else if (flamepin == flameBLpin) { //If the back left pin is selected
@@ -185,10 +220,9 @@ else if (flamepin == flameBCpin) { //If the back center pin is selected
     digitalWrite(selectCpin,HIGH);
     flameval = analogRead(multiPin); //Read the pin through the multiplexer, set to flame val
   }
-  
+
   return flameval;
 }
- 
 
 
 
@@ -199,14 +233,7 @@ else if (flamepin == flameBCpin) { //If the back center pin is selected
 
 
 
-//#############################################################################################
-//Reflectivity Sensor Function
-//############################################################################################# 
-//  int senseReflection(int pinval)
-//  {
-//    reflectVal = analogRead(pinval);
-//    return reflectVal;
-//  }
+
 
 
 
@@ -221,38 +248,41 @@ else if (flamepin == flameBCpin) { //If the back center pin is selected
 //#############################################################################################
 //Basic Drive Function
 //#############################################################################################
-void drive( int dir, int howfast) //call with drive(FWD/REV/CW/CCW, 0-255) for direction and speed
+void drive( String dir, int howfast) //call with drive(FWD/REV/CW/CCW, 0-255) for direction and speed
 {
   if(dir == CW)
   {
     digitalWrite(leftDirPin, LOW);
-  digitalWrite(rightDirPin, HIGH);
-  analogWrite(leftSpeedPin, howfast);
-  analogWrite(rightSpeedPin, howfast);
+    digitalWrite(rightDirPin, HIGH);
+    analogWrite(leftSpeedPin, howfast);
+    analogWrite(rightSpeedPin, howfast);
   }
   if(dir == CCW)
-   {
+  {
     digitalWrite(leftDirPin, HIGH);
-  digitalWrite(rightDirPin, LOW);
-  analogWrite(leftSpeedPin, howfast);
-  analogWrite(rightSpeedPin, howfast);
+    digitalWrite(rightDirPin, LOW);
+    analogWrite(leftSpeedPin, howfast);
+    analogWrite(rightSpeedPin, howfast);
   }
   if(dir == FWD)
-   {
+  {
     digitalWrite(leftDirPin, LOW);
-  digitalWrite(rightDirPin, LOW);
-  analogWrite(leftSpeedPin, howfast);
-  analogWrite(rightSpeedPin, howfast);
+    digitalWrite(rightDirPin, LOW);
+    analogWrite(leftSpeedPin, howfast);
+    analogWrite(rightSpeedPin, howfast);
   }
   if(dir == REV)
-   {
+  {
     digitalWrite(leftDirPin, LOW);
-  digitalWrite(rightDirPin, HIGH);
-  analogWrite(leftSpeedPin, howfast);
-  analogWrite(rightSpeedPin, howfast);
+    digitalWrite(rightDirPin, HIGH);
+    analogWrite(leftSpeedPin, howfast);
+    analogWrite(rightSpeedPin, howfast);
   }
- 
+
 }
+
+
+
 
 
 
@@ -263,72 +293,46 @@ void drive( int dir, int howfast) //call with drive(FWD/REV/CW/CCW, 0-255) for d
 
 
 //#############################################################################################
-//Code for encoders
+//Encoder code
 //#############################################################################################
-int encodeDistance(int whichEncoder)
+
+void leftEncoder()
 {
-  int rawsensorValue=0;
-int encoderVarSelect;
- int sensorcount0 = 0;
- if which
-  rawsensorValue = analogRead(whichEncoder);
+  int raw;
+  prevEncoderL=currentEncoderL; //Previous current value becomes current previous value
+  raw = analogRead(encoderPinL);
+  if(raw < 600) //check if encoder is on white
+  {
+    currentEncoderL = 1; //if so, make 1
+  }
+  else
+  {
+    currentEncoderL = 0; //if not, make 0
+  }
+  if(currentEncoderL != prevEncoderL) //if the previous and current arent the same (AKA transition)
+  {
+    encoderCountL ++; //add one to the count
+  }
+}
 
-if(whichEncoder == A0)
+void rightEncoder()
 {
-  encoderVarSelect = sensorcount1L;
+  int raw;
+  prevEncoderR=currentEncoderR; //Previous current value becomes current previous value
+  raw = analogRead(encoderPinR);
+  if(raw < 600) //check if encoder is on white
+  {
+    currentEncoderR = 1; //if so, make 1
+  }
+  else
+  {
+    currentEncoderR = 0; //if not, make 0
+  }
+  if(currentEncoderR != prevEncoderR)
+  {
+    encoderCountR ++;
+  }
 }
-else
-{
-  encoderVarSelect = sensorcount1R;
-}
-
-if (rawsensorValue < 600){ //Min value is 400 and max value is 800, so state chance can be done at 600.
-encoderVarSelect = 1;
-}
-else {
-sensorcount1 = 0;
-}
-if (encoderVarSelect != sensorcount0){
-count ++;
-}
-
-
-
-
-
-
-
-
-//#############################################################################################
-//Go Distance at Heading Code
-//#############################################################################################
-int goplace( int radius, int angle)
-{
-  int originalHeading= roundedAngle; //makes current heading variable
-
-  if(angle - originalHeading <=180) // if the destination is less than 180 degrees clockwise from the orginal angle
-{
-setdir = CW;
-}
-else if (angle - originalHeading >180) //this part makes it turn the shortest way possible
-{
- setdir = CCW;
-}
-
-while(roundedAngle != angle) // while it isn't facing the right direction. 
-{
-  readHeading();
-drive(setdir, 255); //spin the direction set above
-}
-drive(FWD, 0); //stop
-
-}
-  
-   
-
-
-
-
 
 
 
@@ -350,27 +354,44 @@ drive(FWD, 0); //stop
 //Gyro Code
 //#############################################################################################
 
-void readHeading()
+void readHeading(int timing)
 {
-gyroRate = (analogRead(gyroPin) * gyroVoltage) / 1023; //This line converts the 0-1023 signal to 0-5V
+  gyroRate = (analogRead(gyroPin) * gyroVoltage) / 1023; //This line converts the 0-1023 signal to 0-5V
   gyroRate -= gyroZeroVoltage;  //This line finds the voltage offset from sitting still
-   gyroRate /= gyroSensitivity;   //This line divides the voltage we found by the gyro's sensitivity
-   if (gyroRate >= rotationThreshold || gyroRate <= -rotationThreshold) { //Ignore the gyro if our angular velocity does not meet our threshold
-    gyroRate /= 100; //This line divides the value by 100 since we are running in a 10ms loop (1000ms/10ms)
+  gyroRate /= gyroSensitivity;   //This line divides the voltage we found by the gyro's sensitivity
+  if (gyroRate >= rotationThreshold || gyroRate <= -rotationThreshold) { //Ignore the gyro if our angular velocity does not meet our threshold
+    gyroRate /= timing; //This line divides the value by 100 since we are running in a 10ms loop (1000ms/10ms)
     currentAngle += gyroRate;
-   }
-   if (currentAngle < 0) {  //Keep our angle between 0-359 degrees
+  }
+  if (currentAngle < 0) {  //Keep our angle between 0-359 degrees
     currentAngle += 360;
-}
+  }
   else if (currentAngle > 359) {
     currentAngle -= 360;
+  }
+  roundedAngle = currentAngle;
+  roundedAngle = 360 - roundedAngle;
+  return;
 }
-   roundedAngle = currentAngle;
-return;
+
+
+void checkSensors(int gyroTiming)
+{
+  leftEncoder(); //get encoder ticks
+  rightEncoder();
+  flameFLval = senseFlame(flameFLpin); //check all flame sensors
+  flameFCval = senseFlame(flameFCpin);
+  flameFRval = senseFlame(flameFRpin);
+  flameBLval = senseFlame(flameBLpin);
+  flameBCval = senseFlame(flameBCpin);
+  flameBRval = senseFlame(flameBRpin);
+  readHeading(gyroTiming); // check gyro
+  frontUSdist = measureDistance(frontUSpin); // check all US sensors
+  leftUSdist = measureDistance(leftUSpin);
+  rightUSdist = measureDistance(rightUSpin);
+  reflectVal = reflectSensor(); //check reflectivity sensor
+  return;
 }
-
-
-
 
 
 
@@ -413,22 +434,78 @@ return;
 //#############################################################################################
 //Loop Code
 //#############################################################################################
-void loop()
-{
- //Here is some basic code for sensing 
- leftUSdist = measureDistance(leftUSpin);
- rightUSdist = measureDistance(rightUSpin);
- frontUSdist = measureDistance(frontUSpin);
- 
- flameFLval = senseFlame(flameFLpin);
- flameFCval = senseFlame(flameFCpin);
- flameFRval = senseFlame(flameFRpin);
- flameBRval = senseFlame(flameBRpin);
- flameBCval = senseFlame(flameBCpin);
- flameBLval = senseFlame(flameBLpin);
- readHeading();
- //This code is used for keeping the gyroscope heading
-  //round to whole number
- 
+void loop() {
+  switch(gameMode) {
+  case 0:
+    {
+      //intelligent navigation
+      int roomMode=0; //This is how to search each room.
+      //0 = first hallway
+      //1 = 
+      //2 =
+      //3 =
 
+      checkSensors(50); //update all sensors
+      digitalWrite(leftDirPin, LOW);
+      digitalWrite(rightDirPin, LOW);
+      analogWrite(leftSpeedPin, 255); 
+      analogWrite(rightSpeedPin, 255);
+      Serial.println("Start");
+      while(roomMode ==0 && frontUSdist > 10) //before reaching the wall
+      {
+        checkSensors(50); //update all sensors
+        Serial.println(roundedAngle);
+        delay(10);
+        if(roundedAngle >= 4 && roundedAngle < 180) //if veering clockwise
+        {
+          digitalWrite(leftDirPin, LOW);
+          digitalWrite(rightDirPin, LOW);
+          analogWrite(leftSpeedPin, 200); //slow down left side to compensate
+          analogWrite(rightSpeedPin, 255);
+          Serial.println("compensate for clockwise");
+          
+        }
+        else if(roundedAngle <= 360-4 && roundedAngle > 180) //if veering c-clockwise
+        {
+          digitalWrite(leftDirPin, LOW);
+          digitalWrite(rightDirPin, LOW);
+          analogWrite(leftSpeedPin, 255); //slow down right side to compensate
+          analogWrite(rightSpeedPin, 200);
+          Serial.println("compensate for clockwise");
+        }
+        else //if on track
+        {
+          digitalWrite(leftDirPin, LOW);
+          digitalWrite(rightDirPin, LOW);
+          analogWrite(leftSpeedPin, 255); 
+          analogWrite(rightSpeedPin, 255);
+          //Serial.println("going straignt");
+        }
+
+      }
+    }
+    digitalWrite(leftDirPin, LOW);
+          digitalWrite(rightDirPin, LOW);
+          analogWrite(leftSpeedPin, 0); 
+          analogWrite(rightSpeedPin, 0);
+   
+
+  case 1:
+    // Fire is detected, closing in!
+    break;
+  case 2:
+    // something must've went wrong, brute force method
+    break;
+  case 3: 
+    // time to go home
+    break;
+  default:
+    //Found home! yay!
+    digitalWrite(2, HIGH);
+    delay(100);
+    digitalWrite(2, LOW);
+    delay(100);
+    break;
+  }
 }
+
