@@ -2,13 +2,12 @@
 //Fire Fighting Robot Code - Drexel Freshman Design Project 2012 Group 5
 //Michael Dornisch, Matthew Lieve, Jim Moran
 //#############################################################################################
-#include <avr/interrupt.h>  //include interrupts to use timer 2 overflow as internal interrrupt
-#include <avr/io.h>
+#include "Timer.h" //use custom timer function. see http://arduino.cc/playground/Code/Timer
 //#############################################################################################
 //Initial Variables/Constants
 //#############################################################################################
-String CW, CCW, FWD, REV, setdir;
 int gameMode = 0;
+int roomMode = 0;
 //#####################################
 //Reflectivity Sensor
 int reflectPin =9;
@@ -48,20 +47,17 @@ int flameFRval;
 int flameBRval;
 int flameBCval;
 int flameBLval;
+int fireThreshold = 500; //This is the threshold for something seen to be considered a fire
 //#####################################
 //Gyro vars
-int gyroPin = A4;               //Gyro is connected to analog pin 0
-float gyroVoltage = 5;         //Gyro is running at 5V
-float gyroZeroVoltage = 2.425;   //Gyro is zeroed at 2.423V
+Timer t;
+int gyroPin = 4;//Gyro is connected to analog pin 0
+float gyroZeroVoltage = 2.43;   //Gyro is zeroed at 2.5V
 float gyroSensitivity = .007;  //Our example gyro is 7mV/deg/sec
 float rotationThreshold = 1;   //Minimum deg/sec to keep track of - helps with gyro drifting
-
-volatile float currentAngle = 0;          //Keep track of our current angle
-volatile int roundedAngle; //rounded angle for whole number use
-volatile float gyroRate;
-unsigned int count = 0;
-volatile float ISRvalue;
-volatile boolean canCheck = false;
+float gyroVoltage = 5.00;
+float currentAngle = 0;   //Keep track of our current angle
+int roundedAngle;
 //#####################################
 //Encoder Vars
 int avgCount;
@@ -73,13 +69,14 @@ int prevEncoderL=0;
 int prevEncoderR=0;
 int encoderCountL=0;
 int encoderCountR=0;
-int distanceTraveled;
+float distanceTraveled;
 String Left, Right;
 //#####################################
 //movement Vars
 int leftSpeedPin=5, rightSpeedPin=6;
 int leftDirPin=7, rightDirPin=8;
-int leftSpeed, rightSpeed, leftDir, rightDir; 
+int leftSpeed, rightSpeed, leftDir, rightDir;
+String CW, CCW, FWD, REV, STOP, setdir;
 
 
 
@@ -110,25 +107,8 @@ void setup()
   pinMode(1, OUTPUT);
   pinMode(2, OUTPUT);
   digitalWrite(10, HIGH); //Turn fan off. it defaults to on when LOW
-
-  //Setup Timer2 to fire every 1ms
-  TCCR2B = 0x00;        //Disbale Timer2 while we set it up
-  TCNT2  = 130;         //Reset Timer Count to 130 out of 255
-  TIFR2  = 0x00;        //Timer2 INT Flag Reg: Clear Timer Overflow Flag
-  TIMSK2 = 0x01;        //Timer2 INT Reg: Timer2 Overflow Interrupt Enable
-  TCCR2A = 0x00;        //Timer2 Control Reg A: Normal port operation, Wave Gen Mode normal
-  TCCR2B = 0x05;        //Timer2 Control Reg B: Timer Prescaler set to 128
+  t.every(10, readHeading); //custom timer, every 10ms, readHeading();
 }
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -164,10 +144,6 @@ int measureDistance(int USside) //I want to be able to put measureDistance(front
   return USdist;
 }
 
-
-
-
-
 //#############################################################################################
 //Reflector Sensor
 //#############################################################################################
@@ -185,7 +161,6 @@ long reflectSensor(){
 
   return result;                   // report results   
 }   
-
 
 //#############################################################################################
 //Flame Sensor Code / Multiplexer Function
@@ -238,26 +213,6 @@ int senseFlame( int flamepin)
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 //#############################################################################################
 //Basic Drive Function
 //#############################################################################################
@@ -269,6 +224,7 @@ void drive( String dir, int howfast) //call with drive(FWD/REV/CW/CCW, 0-255) fo
     digitalWrite(rightDirPin, HIGH);
     analogWrite(leftSpeedPin, howfast);
     analogWrite(rightSpeedPin, howfast);
+    gyroVoltage = 5.01; //this compensates for voltage drop to stop gyro drift
   }
   if(dir == CCW)
   {
@@ -276,6 +232,7 @@ void drive( String dir, int howfast) //call with drive(FWD/REV/CW/CCW, 0-255) fo
     digitalWrite(rightDirPin, LOW);
     analogWrite(leftSpeedPin, howfast);
     analogWrite(rightSpeedPin, howfast);
+    gyroVoltage = 5.01;
   }
   if(dir == FWD)
   {
@@ -283,6 +240,7 @@ void drive( String dir, int howfast) //call with drive(FWD/REV/CW/CCW, 0-255) fo
     digitalWrite(rightDirPin, LOW);
     analogWrite(leftSpeedPin, howfast);
     analogWrite(rightSpeedPin, howfast);
+    gyroVoltage = 5.01;
   }
   if(dir == REV)
   {
@@ -290,17 +248,64 @@ void drive( String dir, int howfast) //call with drive(FWD/REV/CW/CCW, 0-255) fo
     digitalWrite(rightDirPin, HIGH);
     analogWrite(leftSpeedPin, howfast);
     analogWrite(rightSpeedPin, howfast);
+    gyroVoltage = 5.01;
   }
-
+  if(dir == STOP)
+  {
+    digitalWrite(leftDirPin, LOW);
+    digitalWrite(rightDirPin, LOW);
+    analogWrite(leftSpeedPin, 0);
+    analogWrite(rightSpeedPin, 0);
+    gyroVoltage = 5.00;
+  }
+  return;
 }
 
+//#############################################################################################
+//Advanced Drive Functions
+//#############################################################################################
+//This allows for turning to a specific angle
+void turnAngle(String LR, int heading) //input= CW/CCW, 0-360 degrees
+{
+  drive(LR, 255);
 
-
-
-
-
-
-
+  while(roundedAngle != heading)
+  {
+    t.update();
+  }
+  drive(STOP, 0);
+  delay(250);
+  return;
+}
+//this allows for driving a specific distance, in cm.
+//diamater is 37.5mm / 3.75 cm. There are 16 partitions on the encoder wheel(8 white/black), for 22.5 degrees per tick
+//this breaks down to .735cm per tick
+void driveEnc(String FR, int dist)
+{
+  encoderCountL=0;
+  encoderCountR=0;
+  distanceTraveled=0;
+  drive(FR, 255);  
+  while(distanceTraveled < dist)
+  {
+    checkSensors();
+    t.update();
+    leftEncoder();
+    rightEncoder();
+    distanceTraveled = ((encoderCountL + encoderCountR)/2 * 0.736); //This gets the average of the two encoders, and multiplies into distance(cm)
+    if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+    {//if a fire is seen, stop and break from this immediatley.
+      gameMode = 1;
+      delay(250);
+      drive(STOP, 0);
+      delay(250);
+      return;
+    }
+  }
+  drive(STOP, 0);
+  delay(250);
+  return;
+}
 
 
 
@@ -326,6 +331,7 @@ void leftEncoder()
   {
     encoderCountL ++; //add one to the count
   }
+  return;
 }
 
 void rightEncoder()
@@ -345,49 +351,38 @@ void rightEncoder()
   {
     encoderCountR ++;
   }
+  return;
 }
 
-//#############################################################################################
-//Interrupt Service Routine
-//#############################################################################################
-ISR(TIMER2_OVF_vect) { //Timer2 overflow interrupt vector, called every 1 ms
-  count++;
-  if(count > 99) { //how many ms to wait before doing this(0 based)
-    // readHeading();  - don't use this, too much going on...
-    ISRvalue = analogRead(gyroPin);
-    count = 0; 
-    canCheck = true; 
-  }
-  TCNT2 = 130; //set to 130 out of 255 (125 cycles)
-  TIFR2 = 0x00; //restart timer
-};
+
 
 //#############################################################################################
 //Gyro Code
 //#############################################################################################
 
-void readHeading()
-{
-  if(canCheck)
+void readHeading() {
+  float gyroRate = ((analogRead(gyroPin) * gyroVoltage) / 1023);//- 5.0 + mappedVoltage;
+
+  //This line finds the voltage offset from sitting still
+  gyroRate -= gyroZeroVoltage;
+
+  //This line divides the voltage we found by the gyro's sensitivity
+  gyroRate /= gyroSensitivity;
+
+  //Ignore the gyro if our angular velocity does not meet our threshold
+  if (gyroRate >= rotationThreshold || gyroRate <= -rotationThreshold) 
   {
-    gyroRate = (ISRvalue * gyroVoltage) / 1023; //This line converts the 0-1023 signal to 0-5V
-    gyroRate -= gyroZeroVoltage;  //This line finds the voltage offset from sitting still
-    gyroRate /= gyroSensitivity;   //This line divides the voltage we found by the gyro's sensitivity
-    if (gyroRate >= rotationThreshold || gyroRate <= -rotationThreshold) { //Ignore the gyro if our angular velocity does not meet our threshold
-      gyroRate /= 10; //This line divides the value by 100 since we are running in a 10ms loop (1000ms/10ms)
-      currentAngle += gyroRate;
-    }
-    if (currentAngle < 0) {  //Keep our angle between 0-359 degrees
-      currentAngle += 360;
-    }
-    else if (currentAngle > 359) {
-      currentAngle -= 360;
-    }
-    roundedAngle = currentAngle;
-    roundedAngle = 360 - roundedAngle;
-    //Serial.println(" ");
-    canCheck = false;
+    //This line divides the value by 100 since we are running in a 10ms loop (1000ms/10ms)
+    gyroRate /= 100 / 3.6;
+    currentAngle += gyroRate;
   }
+
+  //Keep our angle between 0-359 degrees
+  if (currentAngle < 0)
+    currentAngle += 360;
+  else if (currentAngle > 359)
+    currentAngle -= 360;
+  roundedAngle = 360 - currentAngle;
   return;
 }
 
@@ -402,7 +397,7 @@ void checkSensors()
   flameBLval = senseFlame(flameBLpin);
   flameBCval = senseFlame(flameBCpin);
   flameBRval = senseFlame(flameBRpin);
-  readHeading(); // check gyro
+  //readHeading(); // check gyro
   frontUSdist = measureDistance(frontUSpin); // check all US sensors
   leftUSdist = measureDistance(leftUSpin);
   rightUSdist = measureDistance(rightUSpin);
@@ -418,83 +413,326 @@ void checkSensors()
 //#############################################################################################
 //Loop Code
 //#############################################################################################
-//void loop() {
-//  switch(gameMode) {
-//  case 0:
-//    {
-//      //intelligent navigation
-//      int roomMode=0; //This is how to search each room.
-//      //0 = first hallway
-//      //1 = 
-//      //2 =
-//      //3 =
-//
-//      checkSensors(); //update all sensors
-//      digitalWrite(leftDirPin, LOW);
-//      digitalWrite(rightDirPin, LOW);
-//      analogWrite(leftSpeedPin, 255); 
-//      analogWrite(rightSpeedPin, 255);
-//      Serial.println("Start");
-//      while(roomMode ==0 && frontUSdist > 10) //before reaching the wall
-//      {
-//        checkSensors(); //update all sensors
-//        Serial.println(roundedAngle);
-//        if(roundedAngle >= 4 && roundedAngle < 180) //if veering clockwise
-//        {
-//          digitalWrite(leftDirPin, LOW);
-//          digitalWrite(rightDirPin, LOW);
-//          analogWrite(leftSpeedPin, 200); //slow down left side to compensate
-//          analogWrite(rightSpeedPin, 255);
-//         // Serial.println("compensate for clockwise");
-//
-//        }
-//        else if(roundedAngle <= 360-4 && roundedAngle > 180) //if veering c-clockwise
-//        {
-//          digitalWrite(leftDirPin, LOW);
-//          digitalWrite(rightDirPin, LOW);
-//          analogWrite(leftSpeedPin, 255); //slow down right side to compensate
-//          analogWrite(rightSpeedPin, 200);
-//          //Serial.println("compensate for clockwise");
-//        }
-//        else //if on track
-//        {
-//          digitalWrite(leftDirPin, LOW);
-//          digitalWrite(rightDirPin, LOW);
-//          analogWrite(leftSpeedPin, 255); 
-//          analogWrite(rightSpeedPin, 255);
-//          //Serial.println("going straignt");
-//        }
-//
-//      }
-//    }
-//    digitalWrite(leftDirPin, LOW);
-//    digitalWrite(rightDirPin, LOW);
-//    analogWrite(leftSpeedPin, 0); 
-//    analogWrite(rightSpeedPin, 0);
-//
-//
-//  case 1:
-//    // Fire is detected, closing in!
-//    break;
-//  case 2:
-//    // something must've went wrong, brute force method
-//    break;
-//  case 3: 
-//    // time to go home
-//    break;
-//  default:
-//    //Found home! yay!
-//    digitalWrite(2, HIGH);
-//    delay(100);
-//    digitalWrite(2, LOW);
-//    delay(100);
-//    break;
-//  }
-//}
-void loop()
-{
-  checkSensors();
-  Serial.println(roundedAngle);
+void loop() {
+  switch(gameMode) {
+  case 0:
+    {
+      if(roomMode==0)
+      {
+        //intelligent navigation
+        //This is how to search each room.
+        //0 = first hallway
+        //1 = 
+        //2 =
+        //3 =
+        t.update(); //update timer function
+        checkSensors(); //update all sensors
+        drive(FWD, 255);
+        Serial.println("Start");
+        while(roomMode ==0 && frontUSdist > 10) //before reaching the wall
+        {
+          t.update();
+          checkSensors(); //update all sensors
+          Serial.println(roundedAngle);
+          if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+          if(roundedAngle >= 4 && roundedAngle < 180) //if veering clockwise
+          {
+            digitalWrite(leftDirPin, LOW);
+            digitalWrite(rightDirPin, LOW);
+            analogWrite(leftSpeedPin, 200); //slow down left side to compensate
+            analogWrite(rightSpeedPin, 255);
+
+          }
+          else if(roundedAngle <= 360-4 && roundedAngle > 180) //if veering c-clockwise
+          {
+            digitalWrite(leftDirPin, LOW);
+            digitalWrite(rightDirPin, LOW);
+            analogWrite(leftSpeedPin, 255); //slow down right side to compensate
+            analogWrite(rightSpeedPin, 200);
+          }
+          else //if on track
+          {
+            drive(FWD, 255);
+          }
+
+        }
+      }
+      drive(STOP, 0);
+      roomMode=1;
+      Serial.print(roomMode);
+      //########################################################################################################################### Room 1
+      if(roomMode==1) // turn towards top right room, drive into and out of it
+      {
+        turnAngle(CW,90); //turn 90 degrees towards first room
+
+        if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+        {//if a fire is seen, stop and break from this immediatley.
+          gameMode = 1;
+          delay(250);
+          drive(STOP, 0);
+          delay(250);
+          break;
+        }
+
+        driveEnc(FWD, 50);//drive 50 cm into room
+
+        if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+        {//if a fire is seen, stop and break from this immediatley.
+          gameMode = 1;
+          delay(250);
+          drive(STOP, 0);
+          delay(250);
+          break;
+        }
+        driveEnc(REV, 50);
+
+        if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+        {//if a fire is seen, stop and break from this immediatley.
+          gameMode = 1;
+          delay(250);
+          drive(STOP, 0);
+          delay(250);
+          break;
+        }
+        drive(STOP, 0);
+        roomMode = 2;
+      }//end roomMode1
+      //########################################################################################################################### Room 2
+
+        if(roomMode == 2) //turn to go back down hallway, travel along west wall of room 2, turn towards opening, drive in and out.
+      {
+        turnAngle(CW, 180); //turn down hallway
+
+        if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+        {//if a fire is seen, stop and break from this immediatley.
+          gameMode = 1;
+          delay(250);
+          drive(STOP, 0);
+          delay(250);
+          break;
+        }
+        drive(FWD, 255); 
+        checkSensors();
+        while(rightUSdist < 30) //while driving along the west wall of room 2
+        {
+          t.update();
+          checkSensors();
+          if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+        }
+        driveEnc(FWD, 20); //drive south a little bit further, ultrasonic sensor is not on back of this 
+        if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+        {//if a fire is seen, stop and break from this immediatley.
+          gameMode = 1;
+          delay(250);
+          drive(STOP, 0);
+          delay(250);
+          break;
+        }
+        turnAngle(CW,270); //turn to enter room2
+        driveEnc(FWD,60);
+        if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+        {//if a fire is seen, stop and break from this immediatley.
+          gameMode = 1;
+          delay(250);
+          drive(STOP, 0);
+          delay(250);
+          break;
+        }
+        driveEnc(REV,60);
+        if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+        {//if a fire is seen, stop and break from this immediatley.
+          gameMode = 1;
+          delay(250);
+          drive(STOP, 0);
+          delay(250);
+          break;
+        }
+        drive(STOP,0);
+        roomMode=3;
+      }//end roomMode2
+      //########################################################################################################################### Room 3
+      if(roomMode==3)
+      {
+        turnAngle(CCW,180); //turn south in hallway
+        drive(FWD, 255);
+        checkSensors();
+        while(frontUSdist <= 118) //drive south until in 4-way
+        {
+          t.update();
+          checkSensors();
+          if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+        }
+        
+        turnAngle(CW,270); //turn towards room3
+        drive(FWD,255);
+        checkSensors();
+        while(leftUSdist > 100 ) //drive until near that room opening
+        {
+          t.update();
+          checkSensors();
+          if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+        }
+driveEnc(FWD,20); //go a little farther to be sure.
+if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+          drive(REV, 255);
+          while(leftUSdist < 80)//drive out to 4 way again
+          {
+            t.update();
+          checkSensors();
+          if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+      }
+      driveEnc(REV, 10); //just a little more
+      if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+          drive(STOP,0);
+        roomMode=4;
+      }//end room3
+       //########################################################################################################################### Room 4
+       if(roomMode=4)
+       {
+         checkSensors();
+         turnAngle(CCW,180);//turn south
+         if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+          drive(FWD,255);
+          while(leftUSdist < 80)//move south until by hallway for room 4
+          {
+            t.update();
+          checkSensors();
+          if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+          }
+          driveEnc(FWD,10);
+          if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+          turnAngle(CCW,90);
+          drive(FWD,255);
+          checkSensors();
+           while(frontUSdist > 10)//move east towards the room 4 doorway
+          {
+            t.update();
+          checkSensors();
+          if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+          }
+          turnAngle(CW,180);
+          driveEnc(FWD,40);
+          if(flameFLval >= fireThreshold || flameFCval >= fireThreshold || flameFRval >= fireThreshold || flameBLval >= fireThreshold || flameBCval >= fireThreshold || flameBRval >= fireThreshold)
+          {//if a fire is seen, stop and break from this immediatley.
+            gameMode = 1;
+            delay(250);
+            drive(STOP, 0);
+            delay(250);
+            break;
+          }
+          drive(STOP,0);
+          checkSensors;
+          roomMode=5;
+       }//end room4
+ //########################################################################################################################### Room 5
+if(roomMode=5)
+gameMode=2;
+break;
+    } //end case 0
+
+
+  case 1:
+    // Fire is detected, closing in!
+    break;
+  case 2:
+    // something must've went wrong, brute force method
+    break;
+  case 3: 
+    // time to go home
+    break;
+  default:
+    //Found home! yay!
+    digitalWrite(2, HIGH);
+    delay(100);
+    digitalWrite(2, LOW);
+    delay(100);
+    break;
+  }
 }
+
+
+
+
+
+
+
+
 
 
